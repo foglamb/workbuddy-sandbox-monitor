@@ -1,9 +1,12 @@
 services:
   monitor:
     build: .
+    image: workbuddy-monitor:latest
     restart: unless-stopped
+    # 默认只绑回环。要在局域网访问，设 WB_PUBLISH=0.0.0.0:8788，
+    # 或直接把下面换成 "8788:8788"。容器内始终监听 0.0.0.0。
     ports:
-      - "127.0.0.1:8788:8788"
+      - "${WB_PUBLISH:-127.0.0.1:8788}:8788"
     env_file:
       - path: .env
         required: false
@@ -11,21 +14,33 @@ services:
       WB_HOST: 0.0.0.0
       WB_PORT: 8788
       WB_DATA_DIR: /app/data
-      WB_ADMIN_TOKEN: ${WB_ADMIN_TOKEN:?Set WB_ADMIN_TOKEN in .env}
+      WB_ADMIN_TOKEN: ${WB_ADMIN_TOKEN:?请在 .env 中设置 WB_ADMIN_TOKEN}
       WB_WEB_ORIGIN: ${WB_WEB_ORIGIN:-http://127.0.0.1:8788}
       WB_ALLOWED_ORIGINS: ${WB_ALLOWED_ORIGINS:-}
+      WB_DENIED_DOMAINS: ${WB_DENIED_DOMAINS:-}
       WB_CONCURRENCY: ${WB_CONCURRENCY:-4}
       WB_HISTORY_LIMIT: ${WB_HISTORY_LIMIT:-360}
       WB_LOG_LINES: ${WB_LOG_LINES:-1000}
       WB_LOG_FILE_MB: ${WB_LOG_FILE_MB:-4}
-      WB_MEMORY_CEILING_MB: ${WB_MEMORY_CEILING_MB:-512}
+      # 容器默认给脚本更高内存上限：宿主机 cgroup 已是第一道闸门，
+      # 容器内的 512 MiB 反而可能误杀正常脚本。
+      WB_MEMORY_CEILING_MB: ${WB_MEMORY_CEILING_MB:-1024}
       WB_MAX_RUNS: ${WB_MAX_RUNS:-0}
+      WB_AGS_BINDINGS: ${WB_AGS_BINDINGS:-[]}
     volumes:
+      # 命名卷首次挂载会继承镜像内 /app/data 的属主（node），无需手工 chown
       - monitor-data:/app/data
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8788/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
+      start_period: 15s
       retries: 3
+    # 平台要管理 python 子进程，停止时给它时间清理，避免留下孤儿
+    stop_grace_period: 20s
+    # python 子进程需要能创建线程并读 /proc（内存看门狗）
+    security_opt:
+      - no-new-privileges:true
+
 volumes:
   monitor-data:

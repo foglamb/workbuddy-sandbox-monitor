@@ -1,8 +1,22 @@
+# 构建上下文里不需要的内容
 node_modules
 dist
 data
-.env
-.env.*
-*.sqlite*
 .git
+.gitignore
 test
+*.md
+
+# 真实环境配置绝不进镜像
+.env
+.env.local
+.env.production
+.env.development
+
+# 数据库与加密密钥
+*.sqlite
+*.sqlite-*
+*.python-key
+
+# 但示例配置要保留，方便在容器内查看可用变量
+!.env.example

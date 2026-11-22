@@ -154,17 +154,80 @@ JWT/RT 在数据库中加密保存，加密密钥位于同数据目录的 `monit
 
 升级时**先停止旧服务**（v1.2.1 之前的版本不识别调度锁）。备份整个原数据目录，再解压新版；继续使用原 `WB_DATA_DIR`，或在 Compose 中沿用原项目名和命名卷。启动后确认原网址配置、检查历史及已有续期策略都在，不需要重新导入。
 
-## Docker Compose
+## Docker 与 Compose
 
-在没有现有 `.env` 的项目副本中生成管理口令并启动：
+### 快速启动
 
 ```bash
-umask 077
-node -e "process.stdout.write('WB_ADMIN_TOKEN='+require('node:crypto').randomBytes(32).toString('hex')+'\n')" > .env
+cp .env.example .env
+# 编辑 .env，至少填写 WB_ADMIN_TOKEN（8–128 位字母、数字、下划线或连字符）
+chmod 600 .env
 docker compose up -d --build
 ```
 
-打开 <http://127.0.0.1:8788>，输入 `.env` 中的 `WB_ADMIN_TOKEN`。容器重建后，数据保存在 `monitor-data` 命名卷。访问地址改变时同步调整 `WB_WEB_ORIGIN`。要在容器启用「实例保活」，把实例绑定和对应的凭据加在同一个本地 `.env`，再用 `docker compose up -d` 重建服务。
+打开 <http://127.0.0.1:8788>，用 `.env` 里的 `WB_ADMIN_TOKEN` 登录。
+
+### 端口发布
+
+`compose.yaml` 默认只把端口绑到回环地址（`127.0.0.1:8788`），这是安全的默认值。要从局域网访问，在 `.env` 里加一行：
+
+```
+WB_PUBLISH=0.0.0.0:8788
+```
+
+容器内始终监听 `0.0.0.0`，由发布端口决定谁能连进来。改完执行 `docker compose up -d` 生效。
+
+### 数据持久化
+
+数据保存在 `monitor-data` 命名卷的 `/app/data`，包含三样东西，**备份必须一起拷走**：
+
+| 文件 | 内容 |
+|---|---|
+| `monitor.sqlite` | 沙盒配置、脚本配置、账号、管理口令 |
+| `monitor.sqlite.python-key` | 令牌加密密钥，丢失后已保存的 JWT/RT/PushPlus Token 无法解密 |
+| `python-tasks/` | 每份脚本的状态文件与磁盘日志 |
+
+```bash
+docker run --rm -v workbuddy-monitor_monitor-data:/data -v "$PWD:/backup" alpine \
+  tar czf /backup/workbuddy-data-$(date +%F).tar.gz -C /data .
+```
+
+命名卷首次挂载会继承镜像内 `/app/data` 的属主（`node`），因此无需手工 `chown`。
+
+### 镜像说明
+
+- 两阶段构建：build 阶段装全部依赖并产出 `dist`，运行阶段只保留 `dist`、`server` 和 `python3`
+- 运行阶段以 `node` 用户运行，`no-new-privileges` 已开启
+- 用 `tini` 作为 PID 1：平台会不断 fork/退出 python 子进程，没有 init 时 node 不回收僵尸进程
+- 已包含 `python3` 与 `ca-certificates`，无需额外安装即可运行保活脚本
+- 健康检查走 `/api/health`，`start_period` 15 秒
+- 停止宽限期 20 秒，给 python 子进程留出清理时间
+
+### 容器内的内存上限
+
+容器本身受 cgroup 限制，容器内的 `WB_MEMORY_CEILING_MB` 是第二道闸门。`compose.yaml` 默认把它设为 1024，比宿主机的 512 更宽松——避免 cgroup 与进程内阈值同时收紧时误杀正常脚本（实测单进程约 21 MiB，两者都不太可能触发）。
+
+### 常用命令
+
+```bash
+npm run docker:up      # 构建并后台启动
+npm run docker:logs    # 跟踪日志
+npm run docker:down    # 停止并移除容器（数据卷保留）
+npm run docker:build   # 只构建镜像
+```
+
+### 不用 Compose 时
+
+```bash
+docker build -t workbuddy-monitor:latest .
+docker run -d --name workbuddy -p 127.0.0.1:8788:8788 \
+  -v workbuddy-data:/app/data \
+  -e WB_ADMIN_TOKEN=你的口令 \
+  -e WB_WEB_ORIGIN=http://127.0.0.1:8788 \
+  workbuddy-monitor:latest
+```
+
+要在容器里启用「实例保活」，把 `WB_AGS_BINDINGS` 和对应的 `*_SECRET_ID` / `*_SECRET_KEY` 一起加进 `.env`，再 `docker compose up -d`。
 
 ## 服务端设置
 
