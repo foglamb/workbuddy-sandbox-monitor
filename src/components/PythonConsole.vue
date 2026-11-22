@@ -2,6 +2,8 @@
 import { computed, shallowRef, watch } from 'vue'
 import { errorMessage } from '../api'
 import { pythonStatus, type PythonAccount, type PythonActions, type PythonField, type PythonSharedActions, type PythonTask, type PythonValue } from '../python-model'
+import AccountHome from './AccountHome.vue'
+import AccountScripts from './AccountScripts.vue'
 import PythonSharedSettings from './PythonSharedSettings.vue'
 import PythonTaskDetails from './PythonTaskDetails.vue'
 import PythonTaskForm from './PythonTaskForm.vue'
@@ -17,6 +19,9 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ changed: []; signedOut: [] }>()
 const section = shallowRef<'tasks' | 'settings'>('tasks')
+// 三级视图：账号列表 → 某账号下的脚本 → 某份脚本的详情。
+// 打开某个层级时清空下一层，避免保留了不该看到的上一个账号的内容。
+const openAccountId = shallowRef<string | null | undefined>(undefined)
 const sharedBusy = shallowRef(false)
 const selectedId = shallowRef('')
 const editor = shallowRef<{ id?: string } | null>(null)
@@ -35,6 +40,15 @@ const visibleTasks = computed(() => {
   return tasks.map(task => task.id === recent.id ? recent : task)
 })
 const selected = computed(() => visibleTasks.value.find(task => task.id === selectedId.value) ?? visibleTasks.value[0])
+// 当前处在第几层：'' = 账号列表，'__orphan__' = 旧独立配置，其余为账号 id。
+const accountTasks = computed(() => openAccountId.value === '__orphan__'
+  ? visibleTasks.value.filter(task => task.accountId === null)
+  : visibleTasks.value.filter(task => task.accountId === openAccountId.value))
+const openAccount = computed(() => props.accounts.find(account => account.id === openAccountId.value) ?? null)
+const level = computed<'home' | 'account' | 'task'>(() => {
+  if (editor.value || selectedId.value) return 'task'
+  return openAccountId.value === undefined ? 'home' : 'account'
+})
 const editingTask = computed(() => editor.value?.id ? visibleTasks.value.find(task => task.id === editor.value?.id) : undefined)
 const busy = computed(() => commandBusy.value || formBusy.value || sharedBusy.value)
 const runningCount = computed(() => visibleTasks.value.filter(task => task.status === 'running' || task.status === 'starting').length)
@@ -52,6 +66,26 @@ function switchSection(value: 'tasks' | 'settings') {
   editor.value = null
   notice.value = null
   section.value = value
+  if (value === 'tasks') {
+    selectedId.value = ''
+    openAccountId.value = undefined
+  }
+}
+
+function enterAccount(id: string | null) {
+  if (busy.value) return
+  selectedId.value = ''
+  editor.value = null
+  notice.value = null
+  openAccountId.value = id === null ? '__orphan__' : id
+}
+
+function backToAccounts() {
+  if (busy.value) return
+  selectedId.value = ''
+  editor.value = null
+  notice.value = null
+  openAccountId.value = undefined
 }
 
 function select(id: string) {
@@ -61,9 +95,17 @@ function select(id: string) {
   notice.value = null
 }
 
+// 从账号层新建脚本时，默认带上该账号，省去重复选择。
+const draftAccountId = computed(() => (openAccountId.value && openAccountId.value !== '__orphan__' ? openAccountId.value : undefined))
+
 function openEditor(task?: PythonTask) {
   if (!props.enabled || busy.value || (task && !editable(task))) return
   notice.value = null
+  if (task) {
+    // 编辑已有脚本时定位到它所属的账号层，返回时才落到正确层级。
+    openAccountId.value = task.accountId ?? '__orphan__'
+    selectedId.value = task.id
+  }
   editor.value = task ? { id: task.id } : {}
 }
 
@@ -74,6 +116,7 @@ function editable(task: PythonTask) {
 function saved(task: PythonTask) {
   recentTask.value = task
   selectedId.value = task.id
+  openAccountId.value = task.accountId ?? '__orphan__'
   editor.value = null
   formBusy.value = false
   notice.value = { text: '脚本配置已保存。点击「启动脚本」运行此配置。' }
@@ -117,58 +160,52 @@ async function run(action: 'start' | 'stop' | 'remove') {
 
 <template>
   <div class="page-heading">
-    <div><h1>Python脚本</h1><p>账号和公共参数统一设置，每个沙盒只填写会话与业务地址。</p></div>
+    <div>
+      <h1>Python脚本</h1>
+      <p>账号在最外层，点开账号查看它名下的脚本，再点开脚本看参数与日志。</p>
+    </div>
     <div class="primary-actions">
-      <button class="button" type="button" :class="{ primary: section === 'tasks' }" :aria-pressed="section === 'tasks'" :disabled="busy" @click="switchSection('tasks')">脚本配置</button>
-      <button class="button" type="button" :class="{ primary: section === 'settings' }" :aria-pressed="section === 'settings'" :disabled="!enabled || busy" @click="switchSection('settings')">统一设置</button>
-      <button v-if="section === 'tasks'" class="button primary" type="button" :disabled="!enabled || busy" @click="openEditor()">＋ 新建沙盒配置</button>
+      <button class="button" type="button" :class="{ primary: section === 'tasks' }" :aria-pressed="section === 'tasks'"
+        :disabled="busy" @click="switchSection('tasks')">脚本</button>
+      <button class="button" type="button" :class="{ primary: section === 'settings' }" :aria-pressed="section === 'settings'"
+        :disabled="!enabled || busy" @click="switchSection('settings')">设置</button>
     </div>
   </div>
+
   <section v-if="!enabled" class="panel empty-state disabled-state" aria-labelledby="python-disabled-title">
     <h2 id="python-disabled-title">需要设置管理口令</h2>
     <p>请在服务端设置 <code>WB_ADMIN_TOKEN</code> 并重启服务，再使用管理口令登录。Python 脚本配置、凭据查看与进程启停需要管理认证。</p>
   </section>
+
   <PythonSharedSettings v-else-if="section === 'settings'" :accounts="accounts" :defaults="defaults" :tasks="tasks" :schema="schema"
     :actions="sharedActions" @changed="emit('changed')" @pending="sharedBusy = $event" @signed-out="emit('signedOut')" />
+
   <template v-else>
     <p v-if="notice" :role="notice.error ? 'alert' : 'status'" class="notice" :class="{ error: notice.error }">{{ notice.text }}</p>
-    <div class="dashboard python-dashboard">
-      <section class="panel list-panel" aria-labelledby="python-list-title">
-        <div class="list-heading"><h2 id="python-list-title">脚本配置</h2><small class="muted">{{ visibleTasks.length }} 项 · {{ runningCount }} 项运行中</small></div>
-        <ul v-if="visibleTasks.length" class="sandbox-list" aria-label="Python 脚本配置列表">
-          <li v-for="task in visibleTasks" :key="task.id">
-            <button class="sandbox-row python-task-row" :class="{ selected: selected?.id === task.id && !editor }" type="button"
-              :disabled="busy" :aria-pressed="selected?.id === task.id && !editor" @click="select(task.id)">
-              <span class="row-main"><strong class="row-name">{{ task.name }}</strong><span class="row-url">{{ task.accountName ? `账号：${task.accountName}` : '旧独立配置' }} · {{ task.notes || '未填写备注' }}</span></span>
-              <span class="status-pill" :class="statusClasses[task.status]"><span class="status-dot" aria-hidden="true"></span>{{ pythonStatus[task.status] }}</span>
-            </button>
-          </li>
-        </ul>
-        <div v-else class="empty-state">
-          <h3>尚无沙盒配置</h3><p>{{ accounts.length ? '选择共享账号，填写当前沙盒的会话和业务地址。' : '先在统一设置新增共享账号，后续沙盒无需重复填写令牌。' }}</p>
-          <button v-if="!accounts.length" class="button" type="button" :disabled="busy" @click="switchSection('settings')">前往统一设置</button>
-          <button v-else class="button" type="button" :disabled="busy" @click="openEditor()">新建第一份配置</button>
-        </div>
-        <p class="scope-note list-note">运行服务端已固定的附件 Python 脚本。共享账号与公共默认值在「统一设置」维护，旧独立配置保持兼容。</p>
-      </section>
-      <PythonTaskForm v-if="editor" :key="editor.id ?? 'new'" :task="editingTask" :schema="schema" :accounts="accounts" :defaults="defaults" :actions="actions"
-        @saved="saved" @pending="formBusy = $event" @cancel="editor = null" @settings="switchSection('settings')" />
+
+    <AccountHome v-if="level === 'home'" :accounts="accounts" :tasks="visibleTasks" :disabled="busy"
+      @open="enterAccount" @open-orphans="enterAccount(null)" @create-account="switchSection('settings')" />
+
+    <template v-else-if="level === 'account'">
+      <AccountScripts :account="openAccount" :tasks="accountTasks" :disabled="busy"
+        @back="backToAccounts" @open="select" @create-task="openEditor()" @edit-account="switchSection('settings')" />
+    </template>
+
+    <template v-else>
+      <div class="detail-bar">
+        <button class="button back" type="button" @click="selectedId = ''; editor = null">← 返回脚本列表</button>
+      </div>
+      <PythonTaskForm v-if="editor" :key="editor.id ?? 'new'" :task="editingTask" :schema="schema" :accounts="accounts"
+        :defaults="defaults" :actions="actions" :preset-account-id="draftAccountId"
+        @saved="saved" @pending="formBusy = $event" @cancel="editor = null; selectedId = ''" @settings="switchSection('settings')" />
       <PythonTaskDetails v-else-if="selected" :key="selected.id" :task="selected" :schema="schema" :enabled="enabled" :busy="busy"
         :actions="actions" @edit="openEditor(selected)" @start="run('start')" @stop="run('stop')" @remove="run('remove')" />
-      <section v-else class="panel detail empty-details" aria-labelledby="python-empty-title">
-        <h2 id="python-empty-title">脚本配置详情</h2><p class="muted">新建或选择配置后，可查看已保存参数、按需查看凭据，并启动或停止脚本。</p>
-      </section>
-    </div>
+    </template>
   </template>
 </template>
 
 <style scoped>
-.python-dashboard { grid-template-columns: minmax(240px, .65fr) minmax(0, 1.35fr); }
-.python-task-row { grid-template-columns: minmax(0, 1fr) auto; }
-.python-task-row:disabled { opacity: .65; }
-.list-note { padding: 0 18px 18px; }
+.detail-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.button.back { padding-left: 10px; }
 .disabled-state p { max-width: 700px; margin: 14px auto 0; line-height: 1.8; }
-@media (max-width: 920px) {
-  .python-dashboard { grid-template-columns: minmax(0, 1fr); }
-}
 </style>

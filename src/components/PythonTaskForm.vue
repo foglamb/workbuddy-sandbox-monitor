@@ -11,11 +11,13 @@ const props = defineProps<{
   accounts: readonly PythonAccount[]
   defaults: Readonly<Record<string, PythonValue>>
   actions: Pick<PythonActions, 'create' | 'update'>
+  /** 从某个账号层新建时预选该账号，省去重复选择。 */
+  presetAccountId?: string
 }>()
 const emit = defineEmits<{ saved: [task: PythonTask]; cancel: []; settings: []; pending: [value: boolean] }>()
 const name = shallowRef(props.task?.name ?? '')
 const notes = shallowRef(props.task?.notes ?? '')
-const accountId = shallowRef(props.task ? props.task.accountId ?? '' : props.accounts[0]?.id ?? '')
+const accountId = shallowRef(props.task ? props.task.accountId ?? '' : (props.presetAccountId ?? props.accounts[0]?.id ?? ''))
 const legacyTask = Boolean(props.task && !props.task.accountId)
 const independent = computed(() => legacyTask && !accountId.value)
 const account = computed(() => props.accounts.find(item => item.id === accountId.value))

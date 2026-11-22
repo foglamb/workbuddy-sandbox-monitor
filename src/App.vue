@@ -3,6 +3,7 @@ import { computed, nextTick, shallowRef, useTemplateRef } from 'vue'
 import { errorMessage } from './api'
 import BatchPauseDialog from './components/BatchPauseDialog.vue'
 import ConfigDialog from './components/ConfigDialog.vue'
+import GroupHome from './components/GroupHome.vue'
 import LeaseView from './components/LeaseView.vue'
 import OverviewView from './components/OverviewView.vue'
 import PythonConsole from './components/PythonConsole.vue'
@@ -22,12 +23,29 @@ const query = shallowRef('')
 const groupFilter = shallowRef('')
 const statusFilter = shallowRef<SandboxStatus | 'all' | 'problem'>('all')
 const selectedId = shallowRef('')
+// 网址监控同样是分层：undefined = 分组列表，'' = 全部网址，其余 = 某个分组
+const openGroup = shallowRef<string | undefined>(undefined)
 const notice = shallowRef<{ text: string; error?: boolean } | null>(null)
 const editor = shallowRef<{ id?: string; title: string; config: SandboxConfig } | null>(null)
 const editorError = shallowRef('')
 const busy = shallowRef(false)
 const fileInput = useTemplateRef('import-file')
 const pauseCandidates = shallowRef<PauseCandidate[] | null>(null)
+
+function enterGroup(group: string) {
+  if (busy.value) return
+  openGroup.value = group
+  selectedId.value = ''
+  query.value = ''
+  statusFilter.value = 'all'
+}
+
+function backToGroups() {
+  if (busy.value) return
+  openGroup.value = undefined
+  selectedId.value = ''
+  notice.value = null
+}
 
 function openBatchPause() {
   if (!workspace.value || busy.value) return
@@ -57,7 +75,10 @@ const visible = computed(() => {
     return matchesSearch && matchesGroup && matchesStatus
   })
 })
-const selected = computed(() => visible.value.find(item => item.id === selectedId.value) ?? visible.value[0])
+const inGroup = computed(() => openGroup.value === undefined
+  ? []
+  : visible.value.filter(item => (openGroup.value === '' ? true : (item.config.group || '') === openGroup.value)))
+const selected = computed(() => inGroup.value.find(item => item.id === selectedId.value) ?? inGroup.value[0])
 const originHint = computed(() => 'HTTP(S)')
 const atCapacity = computed(() => Boolean(workspace.value && sandboxes.value.length >= workspace.value.maxSandboxes))
 
@@ -248,44 +269,45 @@ function importBackup(event: Event) {
       :server-time="workspace.serverTime" @open="openFinding" @configure="view = 'urls'; openEditor('create')" @pause="openBatchPause" />
     <LeaseView v-else-if="view === 'leases' && hasLeases" v-model:selected-id="selectedLeaseId"
       :leases="workspace.leases" :update="api.updateLease" :query="api.queryLease" @changed="refresh" />
+    <GroupHome v-else-if="openGroup === undefined" :sandboxes="sandboxes" :disabled="busy"
+      @open="enterGroup" @open-all="enterGroup('')" @create="openEditor('create')" />
+
     <template v-else>
       <div class="page-heading">
-        <div><h1>沙盒部署</h1><p>统一跟踪 WorkBuddy 部署网址的可用性与响应耗时。</p></div>
+        <div>
+          <button class="button back" type="button" :disabled="busy" @click="backToGroups">← 返回分组</button>
+          <h1 class="group-title">{{ openGroup || '全部网址' }}</h1>
+          <p>点开某个网址查看检查详情、响应耗时与历史记录。</p>
+        </div>
         <div class="primary-actions">
           <input ref="import-file" type="file" accept="application/json,.json" hidden @change="importBackup" />
           <button class="button" type="button" :disabled="busy || atCapacity" @click="fileInput?.click()">导入</button>
           <button class="button" type="button" :disabled="!counts.all" @click="exportBackup">导出</button>
-          <button class="button primary" type="button" :disabled="busy || atCapacity" @click="openEditor('create')">＋ 添加沙盒</button>
+          <button class="button primary" type="button" :disabled="busy || atCapacity" @click="openEditor('create')">＋ 添加网址</button>
         </div>
-      </div>
-      <div class="summary" aria-label="部署概况">
-        <div class="stat"><span>全部配置</span><strong>{{ counts.all }}<small> / {{ workspace.maxSandboxes }}</small></strong></div>
-        <div class="stat"><span>正常</span><strong class="text-up">{{ counts.up }}</strong></div>
-        <div class="stat"><span>异常</span><strong class="text-down">{{ counts.problem }}</strong></div>
-        <div class="stat"><span>已暂停</span><strong>{{ counts.paused }}</strong></div>
       </div>
       <p v-if="notice" :role="notice.error ? 'alert' : 'status'" class="notice" :class="{ error: notice.error }">{{ notice.text }}</p>
       <div class="dashboard">
         <section class="panel list-panel" aria-labelledby="list-title">
-          <div class="list-heading"><h2 id="list-title">沙盒列表</h2><small v-if="counts.pending" class="muted">{{ counts.pending }} 项待检查</small></div>
-          <div class="filters" v-if="counts.all">
-            <input v-model="query" aria-label="搜索沙盒" placeholder="搜索名称、网址" />
-            <select v-model="groupFilter" aria-label="按分组筛选">
-              <option value="">全部分组</option><option v-for="group in groups" :key="group">{{ group }}</option>
-            </select>
+          <div class="list-heading">
+            <h2 id="list-title">网址</h2>
+            <small v-if="counts.pending" class="muted">{{ counts.pending }} 项待检查</small>
+          </div>
+          <div class="filters" v-if="inGroup.length">
+            <input v-model="query" aria-label="搜索网址" placeholder="搜索名称、网址…" />
             <select v-model="statusFilter" aria-label="按状态筛选">
               <option value="all">全部状态</option><option value="up">正常</option><option value="problem">异常</option>
               <option value="paused">已暂停</option><option value="pending">待检查</option>
             </select>
           </div>
-          <SandboxList :items="visible" :selected-id="selected?.id" :total="counts.all"
+          <SandboxList :items="inGroup" :selected-id="selected?.id" :total="counts.all"
             @select="selectedId = $event" @create="openEditor('create')" />
         </section>
         <SandboxDetails v-if="selected" :sandbox="selected" :busy="busy" :history="api.history"
           @edit="openEditor('edit', selected)" @check="check(selected)" @toggle="toggle(selected)"
           @copy="openEditor('copy', selected)" @remove="remove(selected)" />
         <section v-else class="panel detail empty-details" aria-labelledby="detail-title">
-          <h2 id="detail-title">检查详情</h2><p class="muted">选择沙盒后可查看 {{ originHint }} 检查结果和下次检查时间。</p>
+          <h2 id="detail-title">检查详情</h2><p class="muted">选择网址后可查看 {{ originHint }} 检查结果和下次检查时间。</p>
         </section>
       </div>
       <footer class="scope-note">状态来自部署网址的 HTTP 响应。沙盒的启动与休眠由 WorkBuddy 管理。</footer>
