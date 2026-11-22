@@ -38,7 +38,14 @@ a { color: var(--accent); }
 .page-heading h1 { font-size: clamp(30px, 4vw, 40px); line-height: 1.12; letter-spacing: -.045em; }
 .page-heading p { margin-top: 11px; color: var(--muted); font-size: 14px; line-height: 1.55; }
 .page-heading .button.back { margin-bottom: 12px; padding-left: 10px; }
-.group-title { font-size: clamp(24px, 3.4vw, 32px); line-height: 1.15; letter-spacing: -.035em; overflow-wrap: anywhere; }
+.group-title { font-size: clamp(20px, 2.6vw, 26px); line-height: 1.15; letter-spacing: -.03em; overflow-wrap: anywhere; }
+/* 分组页头部压扁：返回按钮与标题同行，省掉副标题占的高度 */
+.slim-heading { align-items: center; margin-bottom: 16px; }
+.heading-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.heading-left .button.back { margin-bottom: 0; }
+.slim-heading .primary-actions { align-items: center; }
+/* 分组标题上方不再需要额外空隙 */
+.page-heading .heading-left h1 { margin-top: 0; }
 .primary-actions, .detail-actions, .dialog-footer { display: flex; flex-wrap: wrap; gap: 8px; }
 .button {
   border: 1px solid #38464a; border-radius: 8px; background: #1a2528;

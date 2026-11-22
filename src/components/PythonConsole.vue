@@ -45,6 +45,7 @@ const accountTasks = computed(() => openAccountId.value === '__orphan__'
   ? visibleTasks.value.filter(task => task.accountId === null)
   : visibleTasks.value.filter(task => task.accountId === openAccountId.value))
 const openAccount = computed(() => props.accounts.find(account => account.id === openAccountId.value) ?? null)
+// 账号层始终展示，不因为"只有一个账号"就替用户跳过。
 const level = computed<'home' | 'account' | 'task'>(() => {
   if (editor.value || selectedId.value) return 'task'
   return openAccountId.value === undefined ? 'home' : 'account'

@@ -75,6 +75,7 @@ const visible = computed(() => {
     return matchesSearch && matchesGroup && matchesStatus
   })
 })
+// 分组层始终展示：分级是既定结构，不因为"只有一组"就替用户跳过。
 const inGroup = computed(() => openGroup.value === undefined
   ? []
   : visible.value.filter(item => (openGroup.value === '' ? true : (item.config.group || '') === openGroup.value)))
@@ -273,11 +274,10 @@ function importBackup(event: Event) {
       @open="enterGroup" @open-all="enterGroup('')" @create="openEditor('create')" />
 
     <template v-else>
-      <div class="page-heading">
-        <div>
+      <div class="page-heading slim-heading">
+        <div class="heading-left">
           <button class="button back" type="button" :disabled="busy" @click="backToGroups">← 返回分组</button>
           <h1 class="group-title">{{ openGroup || '全部网址' }}</h1>
-          <p>点开某个网址查看检查详情、响应耗时与历史记录。</p>
         </div>
         <div class="primary-actions">
           <input ref="import-file" type="file" accept="application/json,.json" hidden @change="importBackup" />
@@ -291,7 +291,7 @@ function importBackup(event: Event) {
         <section class="panel list-panel" aria-labelledby="list-title">
           <div class="list-heading">
             <h2 id="list-title">网址</h2>
-            <small v-if="counts.pending" class="muted">{{ counts.pending }} 项待检查</small>
+            <small class="muted">{{ inGroup.length }} 项<template v-if="counts.pending"> · {{ counts.pending }} 待检查</template></small>
           </div>
           <div class="filters" v-if="inGroup.length">
             <input v-model="query" aria-label="搜索网址" placeholder="搜索名称、网址…" />
@@ -310,7 +310,6 @@ function importBackup(event: Event) {
           <h2 id="detail-title">检查详情</h2><p class="muted">选择网址后可查看 {{ originHint }} 检查结果和下次检查时间。</p>
         </section>
       </div>
-      <footer class="scope-note">状态来自部署网址的 HTTP 响应。沙盒的启动与休眠由 WorkBuddy 管理。</footer>
     </template>
     <BatchPauseDialog v-if="pauseCandidates && workspace && !locked" :candidates="pauseCandidates" :submit="api.pauseTasks"
       @close="pauseCandidates = null" @changed="refresh" />
