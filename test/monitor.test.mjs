@@ -81,7 +81,11 @@ test('沙盒按各自间隔调度，失败阈值和恢复互不影响，可暂�
 
   assert.equal((await api(`/${a.id}`, 'PATCH', { enabled: true })).sandbox.status, 'up')
   assert.equal((await api(`/${a.id}`, 'PUT', { ...alpha, url: 'https://changed.example/health' })).sandbox.lastCheck, null)
-  assert.deepEqual((await api(`/${a.id}/checks`)).checks, [])
+  // 改地址后旧记录仍保留，只是被标成上一代配置，便于回溯"什么时候开始坏的"
+  const afterChange = (await api(`/${a.id}/checks`)).checks
+  assert.equal(afterChange.length, 3)
+  assert.equal(afterChange[0].latest, false)
+  assert.equal(afterChange.filter(check => !check.latest).length, 3)
   assert.equal((await api(`/${b.id}`, 'DELETE')).status, 200)
   assert.equal((await api(`/${b.id}/checks`)).status, 404)
 })

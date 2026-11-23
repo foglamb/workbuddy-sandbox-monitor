@@ -271,13 +271,25 @@ export function createApplication(settings, { now = Date.now, probe = checkSite,
       return json(res, 201, { count: sandboxes.length })
     }
 
-    const match = /^\/api\/sandboxes\/([a-f0-9-]{36})(?:\/(checks|check))?$/.exec(path)
+    const match = /^\/api\/sandboxes\/([a-f0-9-]{36})(?:\/(checks|stats|check))?$/.exec(path)
     if (!match) throw new AppError(404, 'not_found', '接口不存在')
     const [, id, action] = match
     if (action === 'checks' && method === 'GET') {
-      const limit = Number(url.searchParams.get('limit') ?? 60)
-      if (!Number.isInteger(limit) || limit < 1 || limit > 120) throw invalid('记录条数须为 1–120')
-      return json(res, 200, { checks: store.history(id, limit) })
+      const limit = Number(url.searchParams.get('limit') ?? 100)
+      // 上限提到 5000，够翻很久；再往前用 before 游标分页，不影响加载速度。
+      if (!Number.isInteger(limit) || limit < 1 || limit > 5000) throw invalid('记录条数须为 1–5000')
+      const before = url.searchParams.get('before')
+      const cursor = before === null ? null : Number(before)
+      if (cursor !== null && (!Number.isInteger(cursor) || cursor < 1)) throw invalid('before 必须是正整数')
+      return json(res, 200, { checks: store.history(id, limit, cursor), generation: store.generationOf(id) })
+    }
+    if (action === 'stats' && method === 'GET') {
+      const hours = url.searchParams.get('hours')
+      if (hours !== null && (!/^\d+$/.test(hours) || Number(hours) < 1 || Number(hours) > 24 * 3650)) {
+        throw invalid('hours 必须是 1–87600 的整数')
+      }
+      const since = hours === null ? null : now() - Number(hours) * 3600_000
+      return json(res, 200, { stats: store.stats(id, since) })
     }
     if (action === 'check' && method === 'POST') {
       const result = await scheduler.run(id)

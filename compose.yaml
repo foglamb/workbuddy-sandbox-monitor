@@ -19,7 +19,8 @@ services:
       WB_ALLOWED_ORIGINS: ${WB_ALLOWED_ORIGINS:-}
       WB_DENIED_DOMAINS: ${WB_DENIED_DOMAINS:-}
       WB_CONCURRENCY: ${WB_CONCURRENCY:-4}
-      WB_HISTORY_LIMIT: ${WB_HISTORY_LIMIT:-360}
+      # 0 = 永久保留检查记录，网址可用性趋势需要长期数据
+      WB_HISTORY_LIMIT: ${WB_HISTORY_LIMIT:-0}
       WB_LOG_LINES: ${WB_LOG_LINES:-1000}
       WB_LOG_FILE_MB: ${WB_LOG_FILE_MB:-4}
       # 容器默认给脚本更高内存上限：宿主机 cgroup 已是第一道闸门，

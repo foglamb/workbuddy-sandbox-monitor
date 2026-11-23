@@ -303,7 +303,7 @@ function importBackup(event: Event) {
           <SandboxList :items="inGroup" :selected-id="selected?.id" :total="counts.all"
             @select="selectedId = $event" @create="openEditor('create')" />
         </section>
-        <SandboxDetails v-if="selected" :sandbox="selected" :busy="busy" :history="api.history"
+        <SandboxDetails v-if="selected" :sandbox="selected" :busy="busy" :history="api.history" :stats="api.stats"
           @edit="openEditor('edit', selected)" @check="check(selected)" @toggle="toggle(selected)"
           @copy="openEditor('copy', selected)" @remove="remove(selected)" />
         <section v-else class="panel detail empty-details" aria-labelledby="detail-title">

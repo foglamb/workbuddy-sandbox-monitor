@@ -138,11 +138,52 @@ export class Store {
     return this.db.prepare('SELECT id FROM sandboxes WHERE next_at <= ? ORDER BY next_at, rowid').all(now)
   }
 
-  history(id, limit) {
+  // 不再按 generation 过滤：改了地址或成功条件后，之前的记录仍然要能看到，
+  // 否则"这个站到底什么时候开始坏的"就查不到了。用 latest 标出代次，
+  // 前端可以把变更点画出来。
+  history(id, limit, before = null) {
     const { generation } = this.row(id)
-    return this.db.prepare(`
-      SELECT * FROM checks WHERE sandbox_id = ? AND generation = ? ORDER BY id DESC LIMIT ?
-    `).all(id, generation, limit).map(checkView)
+    const rows = before === null
+      ? this.db.prepare('SELECT * FROM checks WHERE sandbox_id = ? ORDER BY id DESC LIMIT ?').all(id, limit)
+      : this.db.prepare('SELECT * FROM checks WHERE sandbox_id = ? AND id < ? ORDER BY id DESC LIMIT ?').all(id, before, limit)
+    return rows.map(row => ({ ...checkView(row), latest: row.generation === generation }))
+  }
+
+  // 供前端判断"这一条是不是旧配置下的记录"，以及画变更分界线。
+  generationOf(id) {
+    return this.row(id).generation
+  }
+
+  // 汇总：可用率、耗时分布、失败原因分布。全部从原始记录算出，
+  // 不做采样，保证结论可以用明细逐条核对。
+  stats(id, since = null) {
+    const where = since === null ? 'sandbox_id = ?' : 'sandbox_id = ? AND at >= ?'
+    const args = since === null ? [id] : [id, since]
+    const row = this.db.prepare(`
+      SELECT count(*) AS total,
+             sum(CASE WHEN code = 'ok' THEN 1 ELSE 0 END) AS ok,
+             min(at) AS firstAt, max(at) AS lastAt,
+             min(duration_ms) AS minMs, max(duration_ms) AS maxMs,
+             avg(duration_ms) AS avgMs,
+             sum(duration_ms) AS totalMs
+      FROM checks WHERE ${where}
+    `).get(...args)
+    const byCode = this.db.prepare(`
+      SELECT code, count(*) AS count FROM checks WHERE ${where} GROUP BY code ORDER BY count DESC
+    `).all(...args)
+    const total = row.total ?? 0
+    return {
+      total,
+      ok: row.ok ?? 0,
+      failed: total - (row.ok ?? 0),
+      availability: total ? (row.ok ?? 0) / total : null,
+      firstAt: row.firstAt ?? null,
+      lastAt: row.lastAt ?? null,
+      durationMs: total
+        ? { min: row.minMs, max: row.maxMs, avg: Math.round(row.avgMs), total: row.totalMs }
+        : null,
+      byCode,
+    }
   }
 
   record(id, generation, result, now, trigger) {
@@ -158,11 +199,14 @@ export class Store {
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `).run(id, generation, now, trigger, result.code, result.statusCode, result.durationMs)
       this.db.prepare('UPDATE sandboxes SET failures = ?, next_at = ? WHERE id = ?').run(failures, next, id)
-      this.db.prepare(`
-        DELETE FROM checks WHERE sandbox_id = ? AND id < (
-          SELECT id FROM checks WHERE sandbox_id = ? ORDER BY id DESC LIMIT 1 OFFSET ?
-        )
-      `).run(id, id, this.historyLimit - 1)
+      // historyLimit 为 0 表示永久保留：不做任何删除。
+      if (this.historyLimit > 0) {
+        this.db.prepare(`
+          DELETE FROM checks WHERE sandbox_id = ? AND id < (
+            SELECT id FROM checks WHERE sandbox_id = ? ORDER BY id DESC LIMIT 1 OFFSET ?
+          )
+        `).run(id, id, this.historyLimit - 1)
+      }
       return lastInsertRowid
     })
     return { ...result, id: Number(runId), at: now, trigger }

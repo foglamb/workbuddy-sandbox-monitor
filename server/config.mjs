@@ -150,7 +150,9 @@ export function readSettings(env = process.env) {
     .map(origin => targetUrl(readOrigin(origin, 'WB_ALLOWED_ORIGINS')).origin))
   const dataFile = resolve(env.WB_DATA_DIR || 'data', 'monitor.sqlite')
   const concurrency = envInt('WB_CONCURRENCY', env, 1, 8, 4)
-  const historyLimit = envInt('WB_HISTORY_LIMIT', env, 30, 3000, 360)
+  // 0 = 永久保留全部检查记录。默认保留：网址的可用性趋势需要长期数据才能
+  // 判断"到底是偶发抖动还是持续劣化"，裁剪掉就等于把现场删了。
+  const historyLimit = envInt('WB_HISTORY_LIMIT', env, 0, 1_000_000, 0)
   const logLines = envInt('WB_LOG_LINES', env, 100, 5000, 1000)
   const logFileBytes = envInt('WB_LOG_FILE_MB', env, 1, 64, 4) * 1024 * 1024
   const memoryCeilingMb = envInt('WB_MEMORY_CEILING_MB', env, 128, 8192, 512)

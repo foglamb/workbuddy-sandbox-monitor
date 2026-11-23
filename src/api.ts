@@ -1,5 +1,5 @@
 import type { Lease, LeasePolicy } from './lease-model'
-import type { Check, Sandbox, SandboxConfig } from './model'
+import type { Check, CheckStats, Sandbox, SandboxConfig } from './model'
 import type { PythonAccount, PythonActions, PythonField, PythonSharedActions, PythonTask, PythonValue } from './python-model'
 import type { PauseResult, TaskTarget } from './task-model'
 
@@ -74,7 +74,15 @@ export function makeApi(getToken: () => string) {
     enable: (id: string, enabled: boolean) => request<{ sandbox: Sandbox }>(`/sandboxes/${id}`, 'PATCH', { enabled }),
     remove: (id: string) => request<{ ok: boolean }>(`/sandboxes/${id}`, 'DELETE'),
     check: (id: string) => request<{ result: Check }>(`/sandboxes/${id}/check`, 'POST'),
-    history: (id: string, signal: AbortSignal) => request<{ checks: Check[] }>(`/sandboxes/${id}/checks`, 'GET', undefined, signal),
+    history: (id: string, signal: AbortSignal, options: { limit?: number; before?: number } = {}) => {
+      const query = new URLSearchParams()
+      if (options.limit !== undefined) query.set('limit', String(options.limit))
+      if (options.before !== undefined) query.set('before', String(options.before))
+      const suffix = query.size ? `?${query}` : ''
+      return request<{ checks: Check[]; generation: number }>(`/sandboxes/${id}/checks${suffix}`, 'GET', undefined, signal)
+    },
+    stats: (id: string, signal: AbortSignal, hours?: number) => request<{ stats: CheckStats }>(
+      `/sandboxes/${id}/stats${hours === undefined ? '' : `?hours=${hours}`}`, 'GET', undefined, signal),
     importBackup: (data: unknown) => request<{ count: number }>('/sandboxes/import', 'POST', data),
     updateLease: (id: string, policy: LeasePolicy) => request<{ lease: Lease }>(`/leases/${id}`, 'PUT', policy),
     queryLease: (id: string) => request<{ lease: Lease }>(`/leases/${id}/query`, 'POST'),

@@ -22,6 +22,8 @@ export interface Check {
   trigger: 'manual' | 'scheduled'
   ok: boolean
   code: CheckCode
+  /** false 表示这条记录来自改动地址/成功条件之前的旧配置。 */
+  latest: boolean
   statusCode: number | null
   durationMs: number
 }
@@ -44,6 +46,17 @@ export const defaultConfig: SandboxConfig = {
 
 export const statusLabel: Record<SandboxStatus, string> = {
   pending: '待检查', up: '正常', degraded: '暂时异常', down: '不可用', paused: '已暂停',
+}
+
+export interface CheckStats {
+  total: number
+  ok: number
+  failed: number
+  availability: number | null
+  firstAt: number | null
+  lastAt: number | null
+  durationMs: { min: number; max: number; avg: number; total: number } | null
+  byCode: { code: CheckCode; count: number }[]
 }
 
 const checkLabel: Record<CheckCode, string> = {
