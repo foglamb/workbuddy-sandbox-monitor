@@ -183,7 +183,31 @@ GET /api/sandboxes/:id/stats?hours=24                   # 统计，省略 hours 
 
 ## Docker 与 Compose
 
-### 快速启动
+### 使用 GHCR 预构建镜像
+
+GitHub Actions 会先运行完整测试和前端构建，再构建 `linux/amd64` 与 `linux/arm64` 镜像并推送到 GitHub Container Registry。镜像地址：
+
+```text
+ghcr.io/foglamb/workbuddy-sandbox-monitor:latest
+```
+
+直接拉取并运行：
+
+```bash
+docker pull ghcr.io/foglamb/workbuddy-sandbox-monitor:latest
+docker run -d --name workbuddy --restart unless-stopped \
+  -p 127.0.0.1:8788:8788 \
+  -v workbuddy-data:/app/data \
+  -e WB_ADMIN_TOKEN=请替换为你的管理口令 \
+  -e WB_WEB_ORIGIN=http://127.0.0.1:8788 \
+  ghcr.io/foglamb/workbuddy-sandbox-monitor:latest
+```
+
+每次提交也会生成不可变的完整提交 SHA 标签，便于固定版本和回滚。工作流只在 Docker、前端或服务端文件变化时触发，也可以从 Actions 页面手动运行。
+
+镜像已开放匿名拉取，无需 GitHub 登录。发布页面：<https://github.com/foglamb/workbuddy-sandbox-monitor/pkgs/container/workbuddy-sandbox-monitor>。
+
+### 从源码快速启动
 
 ```bash
 cp .env.example .env
