@@ -20,6 +20,12 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 ca-certificates tini \
  && rm -rf /var/lib/apt/lists/*
 
+LABEL org.opencontainers.image.title="WorkBuddy Sandbox Monitor" \
+      org.opencontainers.image.description="多沙盒网址监控与 Python 脚本保活管理台" \
+      org.opencontainers.image.source="https://github.com/foglamb/workbuddy-sandbox-monitor" \
+      org.opencontainers.image.url="https://github.com/foglamb/workbuddy-sandbox-monitor" \
+      org.opencontainers.image.licenses="UNLICENSED"
+
 WORKDIR /app
 ENV NODE_ENV=production \
     WB_HOST=0.0.0.0 \
